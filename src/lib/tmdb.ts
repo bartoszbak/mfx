@@ -53,7 +53,8 @@ function mapMovie(m: DiscoverResult): TmdbMovie {
 
 export async function discoverMovies(
   genreNames: string[],
-  decade: string
+  decade: string,
+  originCountry?: string
 ): Promise<TmdbMovie[]> {
   const headers = authHeaders();
   const yearStart = parseInt(decade);
@@ -74,6 +75,7 @@ export async function discoverMovies(
     "vote_count.gte": "50",
     page: "1",
     ...(genreIds ? { with_genres: genreIds } : {}),
+    ...(originCountry ? { with_original_language: originCountry } : {}),
   });
 
   const res = await fetch(`${BASE}/discover/movie?${params}`, {

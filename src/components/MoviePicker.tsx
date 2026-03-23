@@ -7,13 +7,102 @@ import { Button } from "@/components/ui/button";
 import { MovieCard } from "@/components/MovieCard";
 import { MovieCombobox } from "@/components/MovieCombobox";
 import { getRecommendations, filterWithAI, AiRecommendation } from "@/app/actions";
+import { LanguageCombobox } from "@/components/LanguageCombobox";
 import type { TmdbMovie } from "@/lib/types";
+
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  const [showTech, setShowTech] = useState(false);
+
+  return (
+    <motion.div
+      key="modal-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="bg-background rounded-2xl p-8 max-w-md w-full mx-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">How it works</h2>
+          <button
+            onClick={() => setShowTech((v) => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+          >
+            {showTech ? "Hide the tech" : "Cut the bs, give me tech."}
+          </button>
+        </div>
+        <ol className="space-y-3 text-sm text-muted-foreground">
+          <li className="flex gap-3">
+            <span className="font-semibold text-foreground shrink-0">1.</span>
+            <span>Pick a movie you recently loved — this becomes your taste reference.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="font-semibold text-foreground shrink-0">2.</span>
+            <span>Select one or more genres and a decade to narrow the search.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="font-semibold text-foreground shrink-0">3.</span>
+            <span>AI extracts the emotional tone, pacing, and style of your reference movie.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="font-semibold text-foreground shrink-0">4.</span>
+            <span>It scores candidates against your taste profile and returns your top 7 matches.</span>
+          </li>
+        </ol>
+
+        <AnimatePresence>
+          {showTech && (
+            <motion.ol
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="overflow-hidden space-y-3 text-sm text-muted-foreground mt-5 pt-5 border-t border-border"
+            >
+              <li className="flex gap-3">
+                <span className="font-semibold text-foreground shrink-0">①</span>
+                <span>Your filters hit the <strong className="text-foreground">TMDB Discover API</strong> — genre IDs, decade range, original language, sorted by vote count. Returns up to 10 candidates.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="font-semibold text-foreground shrink-0">②</span>
+                <span>Your reference movie and all candidates are fetched in parallel from <strong className="text-foreground">TMDB movie + credits endpoints</strong>.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="font-semibold text-foreground shrink-0">③</span>
+                <span><strong className="text-foreground">GPT-4o-mini via OpenRouter</strong> extracts a structured taste profile from the reference: emotional tone, pacing, narrative complexity, aesthetic style, themes, and more — as JSON.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="font-semibold text-foreground shrink-0">④</span>
+                <span>A second <strong className="text-foreground">GPT-4o-mini</strong> call scores each candidate against every taste attribute and returns the top 7 ranked matches with one-sentence reasons.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="font-semibold text-foreground shrink-0">⑤</span>
+                <span>Everything runs as <strong className="text-foreground">Next.js Server Actions</strong> — no API routes, no client-side secrets.</span>
+              </li>
+            </motion.ol>
+          )}
+        </AnimatePresence>
+
+        <Button className="mt-6 w-full" onClick={onClose}>Got it</Button>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Comedy", "Crime",
   "Documentary", "Drama", "Fantasy", "Horror", "Mystery",
   "Romance", "Sci-Fi", "Thriller", "Western",
 ];
+
 
 const DECADES = [
   { label: "1950s", value: "1950" },
@@ -26,20 +115,16 @@ const DECADES = [
   { label: "2020s", value: "2020" },
 ];
 
-type Stage = "idle" | "candidates" | "ai-results";
-
 export function MoviePicker() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedDecade, setSelectedDecade] = useState<string>("");
+  const [selectedCountry, setSelectedCountry] = useState<string>("");
   const [referenceMovie, setReferenceMovie] = useState<TmdbMovie | null>(null);
-
-  const [candidates, setCandidates] = useState<TmdbMovie[]>([]);
   const [aiResults, setAiResults] = useState<AiRecommendation[]>([]);
-  const [stage, setStage] = useState<Stage>("idle");
+  const [hasResults, setHasResults] = useState(false);
   const [error, setError] = useState<string>("");
-
-  const [isFetching, startFetch] = useTransition();
-  const [isFiltering, startFilter] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) =>
@@ -47,67 +132,44 @@ export function MoviePicker() {
     );
   }
 
-  function handleSearch() {
-    if (selectedGenres.length === 0 || !selectedDecade) return;
+  function handleGetRecommendations() {
+    if (selectedGenres.length === 0 || !selectedDecade || !referenceMovie) return;
     setError("");
     setAiResults([]);
-    setStage("idle");
-    startFetch(async () => {
+    setHasResults(false);
+    startTransition(async () => {
       try {
-        const results = await getRecommendations(selectedGenres, selectedDecade);
-        if (results.length === 0) {
-          setError("No movies found. Try different genres or decade.");
+        const candidates = await getRecommendations(selectedGenres, selectedDecade, selectedCountry || undefined);
+        if (candidates.length === 0) {
+          setError("No movies found. Try different filters.");
           return;
         }
-        setCandidates(results);
-        setStage("candidates");
+        const picks = await filterWithAI(candidates, referenceMovie.tmdbID, selectedCountry || undefined);
+        setAiResults(picks);
+        setHasResults(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
     });
   }
 
-  function handleAiFilter() {
-    if (!referenceMovie || candidates.length === 0) return;
-    setError("");
-    startFilter(async () => {
-      try {
-        const picks = await filterWithAI(candidates, referenceMovie.tmdbID);
-        setAiResults(picks);
-        setStage("ai-results");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "AI filtering failed.");
-      }
-    });
-  }
-
-  const canSearch = selectedGenres.length > 0 && selectedDecade !== "";
-  const canFilter = referenceMovie !== null && stage === "candidates";
-  const aiMovieIds = new Set(aiResults.map((r) => r.movie.imdbID));
+  const canSubmit = selectedGenres.length > 0 && selectedDecade !== "" && referenceMovie !== null;
 
   return (
     <>
       {/* ── Sidebar ── */}
-      <aside className="w-1/4 min-w-56 max-w-80 h-screen overflow-y-auto border-r border-border bg-background flex flex-col">
-        <div className="p-6 flex flex-col gap-7 flex-1">
+      <aside className="w-[380px] shrink-0 h-screen flex flex-col p-6">
+        <div className="flex flex-col gap-7 flex-1 bg-background border border-border rounded-2xl shadow-md overflow-y-auto p-6">
           {/* Branding */}
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Mindflix</h1>
             <p className="text-xs text-muted-foreground mt-1 leading-snug">
-              Pick genres &amp; a decade — get curated recommendations.
+              Pick a movie you loved, choose genres &amp; a decade — get AI-curated picks tailored to your taste.
             </p>
           </div>
 
           {/* Reference movie */}
           <section className="space-y-2">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                A movie you recently loved
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Used by AI to personalise your top 3
-              </p>
-            </div>
             <MovieCombobox onSelect={setReferenceMovie} selected={referenceMovie} />
             {referenceMovie && (
               <p className="text-xs text-muted-foreground">
@@ -122,7 +184,7 @@ export function MoviePicker() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Genres
             </h2>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {GENRES.map((genre) => {
                 const active = selectedGenres.includes(genre);
                 return (
@@ -133,7 +195,7 @@ export function MoviePicker() {
                   >
                     <Badge
                       variant={active ? "default" : "outline"}
-                      className={`cursor-pointer select-none text-xs px-2.5 py-0.5 transition-colors ${
+                      className={`cursor-pointer select-none text-sm px-3.5 py-1.5 transition-colors ${
                         active ? "" : "hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
@@ -150,7 +212,7 @@ export function MoviePicker() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Decade
             </h2>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {DECADES.map(({ label, value }) => {
                 const active = selectedDecade === value;
                 return (
@@ -161,7 +223,7 @@ export function MoviePicker() {
                   >
                     <Badge
                       variant={active ? "default" : "outline"}
-                      className={`cursor-pointer select-none text-xs px-2.5 py-0.5 transition-colors ${
+                      className={`cursor-pointer select-none text-sm px-3.5 py-1.5 transition-colors ${
                         active ? "" : "hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
@@ -173,40 +235,51 @@ export function MoviePicker() {
             </div>
           </section>
 
-          {/* Actions */}
+          {/* Cinema from */}
+          <section className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Cinema from
+            </h2>
+            <LanguageCombobox value={selectedCountry} onChange={setSelectedCountry} />
+          </section>
+
+          {/* Action */}
           <div className="flex flex-col gap-2 mt-auto pt-4">
             <Button
-              onClick={handleSearch}
-              disabled={!canSearch || isFetching || isFiltering}
+              onClick={handleGetRecommendations}
+              disabled={!canSubmit || isPending}
               className="w-full"
             >
-              {isFetching ? "Finding movies…" : "Get 10 candidates"}
+              {isPending ? "Finding your picks…" : "Get my top 7"}
             </Button>
-
-            {stage === "candidates" && (
-              <Button
-                onClick={handleAiFilter}
-                disabled={!canFilter || isFiltering || isFetching}
-                variant="outline"
-                className="w-full"
-              >
-                {isFiltering
-                  ? "AI is thinking…"
-                  : referenceMovie
-                  ? "Get my top 3 (AI)"
-                  : "Select a reference movie first"}
-              </Button>
+            {!referenceMovie && (
+              <p className="text-xs text-muted-foreground text-center">
+                Add a reference movie to unlock
+              </p>
             )}
-
             {error && <p className="text-destructive text-xs">{error}</p>}
           </div>
         </div>
       </aside>
 
+      <AnimatePresence>
+        {showHowItWorks && <HowItWorksModal onClose={() => setShowHowItWorks(false)} />}
+      </AnimatePresence>
+
       {/* ── Main results panel ── */}
-      <main className="flex-1 h-screen overflow-y-auto bg-background">
+      <main className="flex-1 h-screen overflow-y-auto scroll-smooth snap-y snap-mandatory bg-background relative">
+        <div className="sticky top-0 z-10 flex justify-end p-4 pointer-events-none">
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            onClick={() => setShowHowItWorks(true)}
+          >
+            How it works
+          </Button>
+        </div>
         <AnimatePresence mode="wait">
-          {stage === "idle" && (
+          {!hasResults && !isPending && (
             <motion.div
               key="idle"
               initial={{ opacity: 0 }}
@@ -214,74 +287,35 @@ export function MoviePicker() {
               exit={{ opacity: 0 }}
               className="flex h-full items-center justify-center text-muted-foreground text-sm"
             >
-              Select genres and a decade to get started.
+              Select a reference movie, genres, and a decade to get started.
             </motion.div>
           )}
 
-          {/* All 10 candidates */}
-          {stage === "candidates" && (
-            <motion.section
-              key="candidates"
+          {isPending && (
+            <motion.div
+              key="loading"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="p-8"
+              className="flex h-full items-center justify-center text-muted-foreground text-sm gap-2"
             >
-              <h2 className="text-lg font-semibold mb-6">
-                {candidates.length} candidates
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-5">
-                {candidates.map((movie, i) => (
-                  <MovieCard key={movie.imdbID} movie={movie} index={i} />
-                ))}
-              </div>
-            </motion.section>
+              <span className="animate-pulse">Analysing your taste and finding the best matches…</span>
+            </motion.div>
           )}
 
-          {/* AI top 3 + remaining */}
-          {stage === "ai-results" && aiResults.length > 0 && (
-            <motion.section
+          {hasResults && aiResults.length > 0 && (
+            <motion.div
               key="ai-results"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="p-8 space-y-10"
             >
-              <div>
-                <h2 className="text-lg font-semibold">Your top 3 picks</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Personalised based on{" "}
-                  <span className="font-medium text-foreground">{referenceMovie?.Title}</span>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                {aiResults.map((rec, i) => (
-                  <MovieCard
-                    key={rec.movie.imdbID}
-                    movie={rec.movie}
-                    index={i}
-                    reason={rec.reason}
-                    highlight
-                  />
-                ))}
-              </div>
-
-              {candidates.filter((m) => !aiMovieIds.has(m.imdbID)).length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-                    Other candidates
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-5 opacity-40">
-                    {candidates
-                      .filter((m) => !aiMovieIds.has(m.imdbID))
-                      .map((movie, i) => (
-                        <MovieCard key={movie.imdbID} movie={movie} index={i} />
-                      ))}
-                  </div>
+              {aiResults.map((rec, i) => (
+                <div key={rec.movie.imdbID} className="h-screen flex items-center justify-center snap-center">
+                  <MovieCard movie={rec.movie} index={i} reason={rec.reason} highlight />
                 </div>
-              )}
-            </motion.section>
+              ))}
+            </motion.div>
           )}
         </AnimatePresence>
       </main>

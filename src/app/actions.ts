@@ -6,10 +6,11 @@ import { buildExtractionPrompt, buildRecommendationPrompt } from "@/lib/system-p
 
 export async function getRecommendations(
   genres: string[],
-  decade: string
+  decade: string,
+  originCountry?: string
 ): Promise<TmdbMovie[]> {
   if (genres.length === 0) return [];
-  return discoverMovies(genres, decade);
+  return discoverMovies(genres, decade, originCountry);
 }
 
 export async function searchMovieTitle(query: string): Promise<TmdbMovie[]> {
@@ -51,7 +52,8 @@ async function callOpenRouter(systemPrompt: string, userMessage: string): Promis
 
 export async function filterWithAI(
   candidates: TmdbMovie[],
-  referenceTmdbID: number
+  referenceTmdbID: number,
+  originCountry?: string
 ): Promise<AiRecommendation[]> {
   // Step 1: fetch reference + all candidate details in parallel
   const [referenceDetail, ...candidateDetails] = await Promise.all([
@@ -96,7 +98,7 @@ ${JSON.stringify(tasteProfile, null, 2)}
 Candidate movies:
 ${candidateList}`;
 
-  const recommendRaw = await callOpenRouter(buildRecommendationPrompt(), userMessage);
+  const recommendRaw = await callOpenRouter(buildRecommendationPrompt(originCountry), userMessage);
 
   let parsed: { recommendations: { imdbID: string; reason: string }[] };
   try {

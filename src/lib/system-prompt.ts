@@ -76,15 +76,19 @@ Rules:
 - If unsure, make the most reasonable inference`;
 }
 
-export function buildRecommendationPrompt(): string {
+export function buildRecommendationPrompt(originCountry?: string): string {
+  const countryLine = originCountry
+    ? `\nNote: the user has filtered for original-language "${originCountry}" cinema — all candidates are already in that language, so treat cultural and cinematic context accordingly.`
+    : "";
+
   return `You are a movie recommendation expert. You will receive:
 1. A taste profile extracted from a reference movie the user loved — describing how that film *feels*
-2. A list of 10 candidate movies (title, year, genre, director, actors, plot, rating)
+2. A list of 10 candidate movies (title, year, genre, director, actors, plot, rating)${countryLine}
 
 Your task:
 - Score each candidate against every attribute in the taste profile (emotional tone, pacing, narrative complexity, aesthetic style, orientation, themes, world type, novelty, social context, creator signals)
-- Select exactly 3 candidates that best match the taste profile across the most attributes
-- Rank them from best to third-best match
+- Select exactly 7 candidates that best match the taste profile across the most attributes
+- Rank them from best to seventh-best match
 
 Respond with a JSON object in this exact shape (no markdown, no text outside the JSON):
 {
@@ -97,7 +101,7 @@ Respond with a JSON object in this exact shape (no markdown, no text outside the
 }
 
 Rules:
-- Never include more or fewer than 3 items
+- Never include more or fewer than 7 items
 - The reason must reference specific taste attributes, not just genre overlap
 - Do not mention the candidate movie title in the reason — the UI shows it already
 - Do not mention the reference movie title by name in the reason`;
