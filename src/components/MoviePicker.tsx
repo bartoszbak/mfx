@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { MovieCard } from "@/components/MovieCard";
 import { MovieCombobox } from "@/components/MovieCombobox";
 import { getRecommendations, filterWithAI, AiRecommendation, TasteProfile } from "@/app/actions";
-import { LanguageCombobox } from "@/components/LanguageCombobox";
+import { LanguageCombobox, LANGUAGES } from "@/components/LanguageCombobox";
 import Image from "next/image";
 import type { TmdbMovie } from "@/lib/types";
 
@@ -209,7 +209,13 @@ export function MoviePicker() {
       try {
         const candidates = await getRecommendations(selectedGenres, selectedDecade, selectedCountry || undefined);
         if (candidates.length === 0) {
-          setError("No movies found. Try different filters.");
+          const genreList = selectedGenres.join(", ");
+          const decade = `${selectedDecade}s`;
+          const language = selectedCountry
+            ? LANGUAGES.find((l) => l.value === selectedCountry)?.label
+            : null;
+          const languagePart = language ? ` in ${language}` : "";
+          setError(`No ${genreList} films from the ${decade}${languagePart} were found. Try adjusting your preferences.`);
           return;
         }
         const { recommendations, tasteProfile } = await filterWithAI(candidates, referenceMovie.tmdbID, selectedCountry || undefined);
@@ -228,7 +234,8 @@ export function MoviePicker() {
     <>
       {/* ── Sidebar ── */}
       <aside className="w-[380px] shrink-0 h-screen flex flex-col p-6">
-        <div className="flex flex-col gap-7 flex-1 bg-background border border-border rounded-2xl shadow-md overflow-y-auto p-6">
+        <div className="flex flex-col flex-1 bg-background border border-border rounded-2xl shadow-md overflow-hidden">
+        <div className="flex flex-col gap-7 flex-1 overflow-y-auto hide-scrollbar p-6">
           {/* Branding */}
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Mindflix</h1>
@@ -239,6 +246,9 @@ export function MoviePicker() {
 
           {/* Reference movie */}
           <section className="space-y-2">
+            <span className="inline-flex items-center justify-center w-6 h-6 min-w-6 min-h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold">1</span>
+            <h2 className="text-base font-semibold tracking-tight">Your taste reference</h2>
+            <p className="text-xs text-muted-foreground -mt-1">We analyse this film to build your taste profile</p>
             <MovieCombobox onSelect={setReferenceMovie} selected={referenceMovie} />
             {referenceMovie && (
               <p className="text-xs text-muted-foreground">
@@ -250,9 +260,10 @@ export function MoviePicker() {
 
           {/* Genres */}
           <section className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Genres
-            </h2>
+            <span className="inline-flex items-center justify-center w-6 h-6 min-w-6 min-h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold">2</span>
+            <h2 className="text-base font-semibold tracking-tight">Your preferences</h2>
+            <p className="text-xs text-muted-foreground -mt-1">Genre, decade &amp; origin language</p>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pt-3">Genre</h3>
             <div className="flex flex-wrap gap-2">
               {GENRES.map((genre) => {
                 const active = selectedGenres.includes(genre);
@@ -312,22 +323,23 @@ export function MoviePicker() {
             <LanguageCombobox value={selectedCountry} onChange={setSelectedCountry} />
           </section>
 
-          {/* Action */}
-          <div className="flex flex-col gap-2 mt-auto pt-4">
-            <Button
-              onClick={handleGetRecommendations}
-              disabled={!canSubmit || isPending}
-              className="w-full"
-            >
-              {isPending ? "Finding your picks…" : "Get my top 7"}
-            </Button>
-            {!referenceMovie && (
-              <p className="text-xs text-muted-foreground text-center">
-                Add a reference movie to unlock
-              </p>
-            )}
-            {error && <p className="text-destructive text-xs">{error}</p>}
-          </div>
+        </div>
+        {/* Action — pinned footer */}
+        <div className="p-6 pt-4 border-t border-border flex flex-col gap-2">
+          <Button
+            onClick={handleGetRecommendations}
+            disabled={!canSubmit || isPending}
+            className="w-full"
+          >
+            {isPending ? "Finding your picks…" : "Get my top 7"}
+          </Button>
+          {!referenceMovie && (
+            <p className="text-xs text-muted-foreground text-center">
+              Add a reference movie to unlock
+            </p>
+          )}
+          {error && <p className="text-destructive text-xs">{error}</p>}
+        </div>
         </div>
       </aside>
 

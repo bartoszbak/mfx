@@ -66,7 +66,7 @@ export function MovieCombobox({ onSelect, selected }: Props) {
   return (
     <div ref={containerRef} className="relative w-full max-w-sm">
       <Input
-        placeholder="Search for a movie you loved…"
+        placeholder="Pick a movie…"
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);

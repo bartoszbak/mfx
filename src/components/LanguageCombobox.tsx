@@ -94,7 +94,7 @@ export function LanguageCombobox({ value, onChange }: Props) {
         )}
       </div>
       {open && filtered.length > 0 && (
-        <ul className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg max-h-52 overflow-y-auto">
+        <ul className="absolute z-50 bottom-full mb-1 w-full rounded-md border bg-popover shadow-lg max-h-52 overflow-y-auto">
           {filtered.map((lang) => (
             <li
               key={lang.value}
