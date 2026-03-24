@@ -19,7 +19,7 @@ export function MovieCard({ movie, index, reason, highlight }: Props) {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: index * 0.05 }}
-      className="relative group bg-muted overflow-hidden rounded-[1.5rem]"
+      className="relative group bg-muted overflow-hidden rounded-[1.5rem] shadow-xl ring-1 ring-black/10"
       style={{ height: "70vh", aspectRatio: "2/3" }}
     >
       {/* Poster */}

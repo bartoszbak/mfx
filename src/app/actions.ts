@@ -22,15 +22,30 @@ export interface AiRecommendation {
   reason: string;
 }
 
+export interface TasteProfile {
+  emotional_tone: string[];
+  pacing: string;
+  narrative_complexity: string;
+  orientation: string;
+  themes: string[];
+  world_type: string;
+  novelty: string;
+  creator_signals: string[];
+}
+
+export interface FilterResult {
+  recommendations: AiRecommendation[];
+  tasteProfile: TasteProfile;
+}
+
 export async function filterWithAI(
   candidates: TmdbMovie[],
   referenceTmdbID: number,
   originCountry?: string
-): Promise<AiRecommendation[]> {
+): Promise<FilterResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
 
-  // Only fetch reference movie details — candidates already have title, year, overview, rating from discover
   const referenceDetail = await getMovieDetail(referenceTmdbID);
   if (!referenceDetail) throw new Error("Could not fetch reference movie details");
 
@@ -48,10 +63,7 @@ Plot: ${referenceDetail.Plot}`;
     )
     .join("\n");
 
-  const userMessage = `${referenceBlock}
-
-Candidates:
-${candidateList}`;
+  const userMessage = `${referenceBlock}\n\nCandidates:\n${candidateList}`;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -76,7 +88,7 @@ ${candidateList}`;
   const json = await response.json();
   const raw = json.choices?.[0]?.message?.content ?? "";
 
-  let parsed: { recommendations: { imdbID: string; reason: string }[] };
+  let parsed: { taste_profile: TasteProfile; recommendations: { imdbID: string; reason: string }[] };
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -85,10 +97,13 @@ ${candidateList}`;
 
   const movieMap = new Map(candidates.map((m) => [m.imdbID, m]));
 
-  return parsed.recommendations
+  const recommendations = parsed.recommendations
     .filter((r) => movieMap.has(r.imdbID))
+    .slice(0, 7)
     .map((r) => ({
       movie: movieMap.get(r.imdbID)!,
       reason: r.reason,
     }));
+
+  return { recommendations, tasteProfile: parsed.taste_profile };
 }

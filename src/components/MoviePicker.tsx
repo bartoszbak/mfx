@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MovieCard } from "@/components/MovieCard";
 import { MovieCombobox } from "@/components/MovieCombobox";
-import { getRecommendations, filterWithAI, AiRecommendation } from "@/app/actions";
+import { getRecommendations, filterWithAI, AiRecommendation, TasteProfile } from "@/app/actions";
 import { LanguageCombobox } from "@/components/LanguageCombobox";
+import Image from "next/image";
 import type { TmdbMovie } from "@/lib/types";
 
 function HowItWorksModal({ onClose }: { onClose: () => void }) {
@@ -97,6 +98,70 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function TasteProfileModal({ profile, referenceMovie, onClose }: { profile: TasteProfile; referenceMovie: TmdbMovie; onClose: () => void }) {
+  const rows: { label: string; value: string }[] = [
+    { label: "Emotional tone", value: profile.emotional_tone.join(", ") },
+    { label: "Pacing", value: profile.pacing },
+    { label: "Narrative complexity", value: profile.narrative_complexity },
+    { label: "Orientation", value: profile.orientation },
+    { label: "World type", value: profile.world_type },
+    { label: "Novelty", value: profile.novelty },
+    { label: "Themes", value: profile.themes.join(", ") },
+    { label: "Creator signals", value: profile.creator_signals.join(", ") },
+  ].filter((r) => r.value);
+
+  const hasPoster = referenceMovie.Poster && referenceMovie.Poster !== "N/A";
+
+  return (
+    <motion.div
+      key="taste-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="bg-background rounded-2xl p-8 max-w-md w-full mx-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold mb-4">Taste profile</h2>
+
+        {/* Reference movie */}
+        <div className="flex gap-3 mb-5 pb-5 border-b border-border">
+          <div className="relative w-12 h-16 shrink-0 rounded-lg overflow-hidden bg-muted ring-1 ring-black/10">
+            {hasPoster ? (
+              <Image src={referenceMovie.Poster} alt={referenceMovie.Title} fill className="object-cover" sizes="48px" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-[10px]">?</div>
+            )}
+          </div>
+          <div className="min-w-0 self-center">
+            <p className="font-medium text-sm text-foreground leading-tight">{referenceMovie.Title}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{referenceMovie.Year} · your reference pick</p>
+          </div>
+        </div>
+
+        <dl className="space-y-3">
+          {rows.map(({ label, value }) => (
+            <div key={label} className="flex gap-3">
+              <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground w-36 shrink-0 pt-0.5">
+                {label}
+              </dt>
+              <dd className="text-sm text-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <Button className="mt-6 w-full" onClick={onClose}>Close</Button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 const GENRES = [
   "Action", "Adventure", "Animation", "Comedy", "Crime",
   "Documentary", "Drama", "Fantasy", "Horror", "Mystery",
@@ -121,10 +186,12 @@ export function MoviePicker() {
   const [selectedCountry, setSelectedCountry] = useState<string>("");
   const [referenceMovie, setReferenceMovie] = useState<TmdbMovie | null>(null);
   const [aiResults, setAiResults] = useState<AiRecommendation[]>([]);
+  const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
   const [hasResults, setHasResults] = useState(false);
   const [error, setError] = useState<string>("");
   const [isPending, startTransition] = useTransition();
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showTasteProfile, setShowTasteProfile] = useState(false);
 
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) =>
@@ -136,6 +203,7 @@ export function MoviePicker() {
     if (selectedGenres.length === 0 || !selectedDecade || !referenceMovie) return;
     setError("");
     setAiResults([]);
+    setTasteProfile(null);
     setHasResults(false);
     startTransition(async () => {
       try {
@@ -144,8 +212,9 @@ export function MoviePicker() {
           setError("No movies found. Try different filters.");
           return;
         }
-        const picks = await filterWithAI(candidates, referenceMovie.tmdbID, selectedCountry || undefined);
-        setAiResults(picks);
+        const { recommendations, tasteProfile } = await filterWithAI(candidates, referenceMovie.tmdbID, selectedCountry || undefined);
+        setAiResults(recommendations);
+        setTasteProfile(tasteProfile);
         setHasResults(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -264,11 +333,37 @@ export function MoviePicker() {
 
       <AnimatePresence>
         {showHowItWorks && <HowItWorksModal onClose={() => setShowHowItWorks(false)} />}
+        {showTasteProfile && tasteProfile && referenceMovie && (
+          <TasteProfileModal
+            profile={tasteProfile}
+            referenceMovie={referenceMovie}
+            onClose={() => setShowTasteProfile(false)}
+          />
+        )}
       </AnimatePresence>
 
       {/* ── Main results panel ── */}
       <main className="flex-1 h-screen overflow-y-auto scroll-smooth snap-y snap-mandatory bg-background relative">
-        <div className="sticky top-0 z-10 flex justify-end p-4 pointer-events-none">
+        <div className="sticky top-0 z-10 flex justify-end gap-2 p-4 pointer-events-none">
+          <AnimatePresence>
+            {tasteProfile && referenceMovie && (
+              <motion.div
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="pointer-events-auto"
+                  onClick={() => setShowTasteProfile(true)}
+                >
+                  Your taste
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <Button
             variant="outline"
             size="sm"
